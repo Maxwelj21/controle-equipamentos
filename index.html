@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🛠️ Controle de Lotes - Roteadores e ONUs</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 15px; background: #f4f4f4; }
+        h1 { color: #0066cc; text-align: center; }
+        .form-container { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        input, select, textarea { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ccc; border-radius: 8px; box-sizing: border-box; font-size: 16px; }
+        button { padding: 14px; border: none; border-radius: 8px; font-size: 16px; width: 100%; margin-top: 8px; cursor: pointer; }
+        .btn-add { background: #28a745; color: white; }
+        .btn-save { background: #0066cc; color: white; font-weight: bold; }
+        .btn-sheet { background: #34a853; color: white; font-weight: bold; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; background: white; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+        th { background: #0066cc; color: white; }
+        .quantidade { font-weight: bold; color: #0066cc; }
+        .lote-atual { background: #fff3cd; border: 2px dashed #ffc107; padding: 15px; border-radius: 12px; margin: 20px 0; }
+        .remover { color: red; cursor: pointer; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<h1>🛠️ Controle de Lotes - Roteadores e ONUs</h1>
+
+<div class="form-container">
+    <label>Data (automática):</label>
+    <input type="text" id="data" readonly>
+
+    <label>Hora (automática):</label>
+    <input type="text" id="hora" readonly>
+
+    <label>Cliente:</label>
+    <select id="cliente"></select>
+    <button onclick="adicionarNovoCliente()" style="background:#ffc107;color:black;margin-top:5px;">+ Novo Cliente</button>
+
+    <label>Tipo de Equipamento:</label>
+    <select id="tipo">
+        <option value="Roteador">Roteador</option>
+        <option value="ONU">ONU</option>
+        <option value="Roteador + ONU">Roteador + ONU (misturado)</option>
+        <option value="Outro">Outro</option>
+    </select>
+
+    <label>Marca / Modelo:</label>
+    <input type="text" id="marca" placeholder="Ex: TP-Link Archer C80, ZTE 660...">
+
+    <label>Quantidade:</label>
+    <input type="number" id="quantidade" value="1" min="1">
+
+    <label>Descrição do Problema / Observação:</label>
+    <textarea id="problema" rows="3" placeholder="Ex: Sem sinal, reset de fábrica..."></textarea>
+
+    <button onclick="adicionarAoLoteAtual()" class="btn-add">➕ ADICIONAR AO LOTE ATUAL</button>
+</div>
+
+<div class="lote-atual">
+    <h2>📦 Lote Atual (em espera)</h2>
+    <table id="tabela-lote-atual">
+        <thead>
+            <tr>
+                <th>Tipo</th>
+                <th>Marca/Modelo</th>
+                <th class="quantidade">Qtd</th>
+                <th>Obs</th>
+                <th>Ação</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+    <button onclick="salvarLoteCompleto()" class="btn-save">💾 SALVAR LOTE COMPLETO NO GOOGLE SHEETS</button>
+    <button onclick="limparLoteAtual()" style="background:#ffc107;color:black;">🗑️ Limpar Lote Atual</button>
+</div>
+
+<h2>📋 Lotes Salvos (no celular)</h2>
+<table id="tabela-salvos">
+    <thead>
+        <tr>
+            <th>Lote Nº</th>
+            <th>Data</th>
+            <th>Cliente</th>
+            <th>Itens</th>
+            <th>Total Qtd</th>
+        </tr>
+    </thead>
+    <tbody></tbody>
+</table>
+
+<button onclick="window.open('https://docs.google.com/spreadsheets/d/1gzk7qU8kDDamsZO9o4zM92sMvkiHay8SohPSNmKrgr8/edit?usp=sharing', '_blank')" class="btn-sheet">
+    📊 Abrir Planilha Completa no Google Sheets
+</button>
+
+<script>
+// ==================== CONFIGURAÇÃO ====================
+// IMPORTANTE: Use a URL da sua última "Implantação" (Deployment) do Apps Script
+const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzoAYlmWua9qG85TAio7T6MWzxCnow1c5PY-EfhvImCdW5Tyctc9crEwuQvey9iIycc/exec";
+
+let loteAtual = [];
+let lotesSalvos = JSON.parse(localStorage.getItem("lotes_salvos")) || [];
+let loteCounter = parseInt(localStorage.getItem("lote_counter")) || 1;
+let clientes = JSON.parse(localStorage.getItem("clientes")) || ["Cliente Particular", "Empresa XYZ", "INOVA TECH"];
+
+function atualizarDropdownClientes() {
+    const select = document.getElementById("cliente");
+    select.innerHTML = "";
+    clientes.forEach(c => {
+        const opt = document.createElement("option");
+        opt.value = c;
+        opt.textContent = c;
+        select.appendChild(opt);
+    });
+}
+
+function adicionarNovoCliente() {
+    const nome = prompt("Digite o nome completo do novo cliente:");
+    if (nome && nome.trim() !== "") {
+        clientes.push(nome.trim());
+        clientes.sort();
+        localStorage.setItem("clientes", JSON.stringify(clientes));
+        atualizarDropdownClientes();
+        alert("✅ Cliente adicionado!");
+    }
+}
+
+function atualizarDataHora() {
+    const agora = new Date();
+    document.getElementById("data").value = agora.toLocaleDateString('pt-BR');
+    document.getElementById("hora").value = agora.toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'});
+}
+
+function atualizarTabelaLoteAtual() {
+    const tbody = document.querySelector("#tabela-lote-atual tbody");
+    tbody.innerHTML = "";
+    loteAtual.forEach((item, index) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+            <td>${item.tipo}</td>
+            <td>${item.marca}</td>
+            <td class="quantidade">${item.quantidade}</td>
+            <td>${item.problema || '-'}</td>
+            <td><span class="remover" onclick="removerDoLoteAtual(${index})">✕</span></td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+function adicionarAoLoteAtual() {
+    const item = {
+        tipo: document.getElementById("tipo").value,
+        marca: document.getElementById("marca").value.trim(),
+        quantidade: parseInt(document.getElementById("quantidade").value),
+        problema: document.getElementById("problema").value.trim()
+    };
+
+    if (!item.marca || item.quantidade < 1) {
+        alert("❌ Preencha Marca/Modelo e Quantidade!");
+        return;
+    }
+
+    loteAtual.push(item);
+    atualizarTabelaLoteAtual();
+    limparFormulario();
+    alert(`✅ ${item.quantidade} × ${item.marca} adicionado ao lote atual`);
+}
+
+function removerDoLoteAtual(index) {
+    if (confirm("Remover este item do lote atual?")) {
+        loteAtual.splice(index, 1);
+        atualizarTabelaLoteAtual();
+    }
+}
+
+async function salvarLoteCompleto() {
+    if (loteAtual.length === 0) {
+        alert("Adicione pelo menos um item ao lote!");
+        return;
+    }
+
+    const cliente = document.getElementById("cliente").value || "Não informado";
+    const data = document.getElementById("data").value;
+    const hora = document.getElementById("hora").value;
+    const numeroLote = `LOTE-${String(loteCounter).padStart(4, '0')}`;
+
+    const dadosParaEnviar = loteAtual.map(item => ({
+        lote: numeroLote,
+        data: data,
+        hora: hora,
+        cliente: cliente,
+        tipo: item.tipo,
+        marca: item.marca,
+        quantidade: item.quantidade,
+        problema: item.problema
+    }));
+
+    try {
+        // Ajuste para evitar erros de CORS e garantir envio ao Apps Script
+        await fetch(WEB_APP_URL, {
+            method: "POST",
+            mode: "no-cors", 
+            headers: { "Content-Type": "text/plain" },
+            body: JSON.stringify(dadosParaEnviar)
+        });
+
+        alert(`✅ Lote ${numeroLote} enviado! Verifique sua planilha.`);
+        
+        // Salva localmente para o histórico do celular
+        lotesSalvos.unshift(...dadosParaEnviar);
+        localStorage.setItem("lotes_salvos", JSON.stringify(lotesSalvos));
+        
+        loteCounter++;
+        localStorage.setItem("lote_counter", loteCounter);
+        
+        loteAtual = [];
+        atualizarTabelaLoteAtual();
+        atualizarTabelaSalvos();
+        limparFormulario();
+        atualizarDataHora();
+
+    } catch (e) {
+        console.error(e);
+        alert("❌ Erro ao conectar. Verifique se a URL do Apps Script está correta e se foi publicada para 'Qualquer pessoa'.");
+    }
+}
+
+function limparFormulario() {
+    document.getElementById("marca").value = "";
+    document.getElementById("quantidade").value = "1";
+    document.getElementById("problema").value = "";
+}
+
+function limparLoteAtual() {
+    if (confirm("Limpar todo o lote atual?")) {
+        loteAtual = [];
+        atualizarTabelaLoteAtual();
+    }
+}
+
+function atualizarTabelaSalvos() {
+    const tbody = document.querySelector("#tabela-salvos tbody");
+    tbody.innerHTML = "";
+    const grupos = {};
+    
+    lotesSalvos.forEach(l => {
+        if (!grupos[l.lote]) grupos[l.lote] = {data: l.data, cliente: l.cliente, itens: 0, totalQtd: 0};
+        grupos[l.lote].itens++;
+        grupos[l.lote].totalQtd += l.quantidade;
+    });
+
+    Object.keys(grupos).forEach(lote => {
+        const g = grupos[lote];
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td><strong>${lote}</strong></td><td>${g.data}</td><td>${g.cliente}</td><td>${g.itens} itens</td><td class="quantidade">${g.totalQtd}</td>`;
+        tbody.appendChild(tr);
+    });
+}
+
+// Inicializa a interface
+atualizarDropdownClientes();
+atualizarDataHora();
+atualizarTabelaLoteAtual();
+atualizarTabelaSalvos();
+</script>
+
+</body>
+</html>
