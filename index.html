@@ -74,7 +74,7 @@
     <button onclick="limparLoteAtual()" style="background:#ffc107;color:black;">🗑️ Limpar Lote Atual</button>
 </div>
 
-<h2>📋 Lotes Salvos (no celular)</h2>
+<h2>📋 Histórico de Lotes Salvos (este celular)</h2>
 <table id="tabela-salvos">
     <thead>
         <tr>
@@ -94,12 +94,10 @@
 
 <script>
 // ==================== CONFIGURAÇÃO ====================
-// IMPORTANTE: Use a URL da sua última "Implantação" (Deployment) do Apps Script
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzoAYlmWua9qG85TAio7T6MWzxCnow1c5PY-EfhvImCdW5Tyctc9crEwuQvey9iIycc/exec";
 
 let loteAtual = [];
 let lotesSalvos = JSON.parse(localStorage.getItem("lotes_salvos")) || [];
-let loteCounter = parseInt(localStorage.getItem("lote_counter")) || 1;
 let clientes = JSON.parse(localStorage.getItem("clientes")) || ["Cliente Particular", "Empresa XYZ", "INOVA TECH"];
 
 function atualizarDropdownClientes() {
@@ -181,10 +179,8 @@ async function salvarLoteCompleto() {
     const cliente = document.getElementById("cliente").value || "Não informado";
     const data = document.getElementById("data").value;
     const hora = document.getElementById("hora").value;
-    const numeroLote = `LOTE-${String(loteCounter).padStart(4, '0')}`;
 
     const dadosParaEnviar = loteAtual.map(item => ({
-        lote: numeroLote,
         data: data,
         hora: hora,
         cliente: cliente,
@@ -195,32 +191,35 @@ async function salvarLoteCompleto() {
     }));
 
     try {
-        // Ajuste para evitar erros de CORS e garantir envio ao Apps Script
-        await fetch(WEB_APP_URL, {
+        const response = await fetch(WEB_APP_URL, {
             method: "POST",
-            mode: "no-cors", 
-            headers: { "Content-Type": "text/plain" },
+            headers: { "Content-Type": "text/plain;charset=utf-8" },
             body: JSON.stringify(dadosParaEnviar)
         });
 
-        alert(`✅ Lote ${numeroLote} enviado! Verifique sua planilha.`);
-        
-        // Salva localmente para o histórico do celular
-        lotesSalvos.unshift(...dadosParaEnviar);
-        localStorage.setItem("lotes_salvos", JSON.stringify(lotesSalvos));
-        
-        loteCounter++;
-        localStorage.setItem("lote_counter", loteCounter);
-        
-        loteAtual = [];
-        atualizarTabelaLoteAtual();
-        atualizarTabelaSalvos();
-        limparFormulario();
-        atualizarDataHora();
+        const resultado = await response.json();
+
+        if (resultado.status === "success") {
+            const loteGerado = resultado.loteGerado;
+            alert(`✅ Lote ${loteGerado} gravado com sucesso na planilha!`);
+
+            const dadosComLote = dadosParaEnviar.map(d => ({ ...d, lote: loteGerado }));
+
+            lotesSalvos.unshift(...dadosComLote);
+            localStorage.setItem("lotes_salvos", JSON.stringify(lotesSalvos));
+
+            loteAtual = [];
+            atualizarTabelaLoteAtual();
+            atualizarTabelaSalvos();
+            limparFormulario();
+            atualizarDataHora();
+        } else {
+            alert("❌ Erro no servidor: " + resultado.message);
+        }
 
     } catch (e) {
         console.error(e);
-        alert("❌ Erro ao conectar. Verifique se a URL do Apps Script está correta e se foi publicada para 'Qualquer pessoa'.");
+        alert("❌ Erro de conexão ao salvar na planilha. Tente novamente.");
     }
 }
 
